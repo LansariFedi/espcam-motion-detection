@@ -3,7 +3,6 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <ESP32Servo.h>
 #include <esp_camera.h>
 #include <HTTPClient.h>
 

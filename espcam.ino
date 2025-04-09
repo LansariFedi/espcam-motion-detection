@@ -1,3 +1,5 @@
+#include "espcam.h"
+
 void setup(){
     Serial.begin(115200);
     // Initialize the camera
