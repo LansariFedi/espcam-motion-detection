@@ -1,6 +1,10 @@
 #ifndef ESPCAM_H
 #define ESPCAM_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_camera.h>
@@ -36,5 +40,9 @@ void initCamera();
 void connectToWiFi();
 bool detectMotion();
 void captureAndSendImage();
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // ESPCAM_H
