@@ -37,7 +37,7 @@ bool initCamera() {
     config.pixel_format = PIXFORMAT_GRAYSCALE;
 
     if (psramFound()) {
-        config.frame_size = FRAMESIZE_QQVGA;
+        config.frame_size = FRAMESIZE_96X96;
         config.jpeg_quality = 12;
         config.fb_count = 2;
         config.fb_location = CAMERA_FB_IN_PSRAM;
@@ -76,13 +76,13 @@ bool detectMotion() {
 
         sensor_t* s = esp_camera_sensor_get();
         s->set_pixformat(s, PIXFORMAT_JPEG);
-        s->set_framesize(s, FRAMESIZE_QVGA);
+        s->set_framesize(s, FRAMESIZE_96X96);
         delay(100);
         lastCapturedFrame = esp_camera_fb_get();
 
         sensor_t* s2 = esp_camera_sensor_get();
         s2->set_pixformat(s2, PIXFORMAT_GRAYSCALE);
-        s2->set_framesize(s2, FRAMESIZE_QQVGA);
+        s2->set_framesize(s2, FRAMESIZE_96X96);
         delay(100);
 
         return true;
