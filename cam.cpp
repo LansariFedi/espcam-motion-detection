@@ -1,17 +1,14 @@
+// cam.cpp
 #include "cam.h"
-#include "esp_system.h"  // psramFound
-#include "Arduino.h"     // delay
-#include <cstring>       // memcpy
-#include <cstdlib>       // abs
+#include <Arduino.h>  // for Serial and delay
 
 #define CAM_WIDTH 160
 #define CAM_HEIGHT 120
-#define MOTION_THRESHOLD 25
-#define CHANGE_LIMIT 1000
+#define MOTION_THRESHOLD 25      // Sensitivity per pixel
+#define CHANGE_LIMIT 1000        // Number of changed pixels to trigger motion
 
 static uint8_t previousFrame[CAM_WIDTH * CAM_HEIGHT];
 static int lastMotionScore = 0;
-static camera_fb_t* lastCapturedFrame = nullptr;
 
 bool initCamera() {
     camera_config_t config;
@@ -36,8 +33,8 @@ bool initCamera() {
     config.xclk_freq_hz = 20000000;
     config.pixel_format = PIXFORMAT_GRAYSCALE;
 
-    if (psramFound()) {
-        config.frame_size = FRAMESIZE_96X96;
+    if(psramFound()){
+        config.frame_size = FRAMESIZE_QQVGA;
         config.jpeg_quality = 12;
         config.fb_count = 2;
         config.fb_location = CAMERA_FB_IN_PSRAM;
@@ -45,7 +42,8 @@ bool initCamera() {
         return false;
     }
 
-    return esp_camera_init(&config) == ESP_OK;
+    esp_err_t err = esp_camera_init(&config);
+    return err == ESP_OK;
 }
 
 bool detectMotion() {
@@ -64,27 +62,14 @@ bool detectMotion() {
         }
     }
 
+    // Save current frame for next comparison
     memcpy(previousFrame, fb->buf, fb->len);
     esp_camera_fb_return(fb);
+
     lastMotionScore = diffCount;
 
     if (diffCount > CHANGE_LIMIT) {
-        if (lastCapturedFrame != nullptr) {
-            esp_camera_fb_return(lastCapturedFrame);
-            lastCapturedFrame = nullptr;
-        }
-
-        sensor_t* s = esp_camera_sensor_get();
-        s->set_pixformat(s, PIXFORMAT_JPEG);
-        s->set_framesize(s, FRAMESIZE_96X96);
-        delay(100);
-        lastCapturedFrame = esp_camera_fb_get();
-
-        sensor_t* s2 = esp_camera_sensor_get();
-        s2->set_pixformat(s2, PIXFORMAT_GRAYSCALE);
-        s2->set_framesize(s2, FRAMESIZE_96X96);
-        delay(100);
-
+        Serial.println("⚠️ Motion detected!");
         return true;
     }
 
@@ -93,8 +78,4 @@ bool detectMotion() {
 
 int getLastMotionScore() {
     return lastMotionScore;
-}
-
-camera_fb_t* captureSnapshot() {
-    return lastCapturedFrame;
 }
