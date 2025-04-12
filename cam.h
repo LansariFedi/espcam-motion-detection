@@ -1,9 +1,7 @@
-#ifndef cam_h
-#define cam_h
+#ifndef CAM_H
+#define CAM_H
+
 
 void initCamera();
-void takePicture();
-void handleJPGStream();
-void startCameraWebServer();
-
+void captureAndDetectMotion();
 #endif

@@ -1,49 +1,19 @@
-#include "cam.h"
-
-#include <WebServer.h>
-#include "WiFi.h"
 #include "esp_camera.h"
-#include "esp_timer.h"
-#include "img_converters.h"
+#define CAMERA_MODEL_AI_THINKER
+#include "esp_heap_caps.h"
+#include "camera_pins.h"
 #include "Arduino.h"
-#include "soc/soc.h"           // Disable brownour problems
-#include "soc/rtc_cntl_reg.h"  // Disable brownour problems
-#include "driver/rtc_io.h"
-#include <ESPAsyncWebServer.h>
-#include <SPIFFS.h>
-#include <FS.h>
+#include <esp_timer.h>
 
+void startCameraServer();
+void setupLedFlash(int pin);
 
-// Create AsyncWebServer object on port 80
-AsyncWebServer server(80);
-
-
-// OV2640 camera module pins (CAMERA_MODEL_AI_THINKER)
-#define PWDN_GPIO_NUM     -1
-#define RESET_GPIO_NUM    -1
-#define XCLK_GPIO_NUM      0
-#define SIOD_GPIO_NUM     26
-#define SIOC_GPIO_NUM     27
-
-#define Y9_GPIO_NUM       35
-#define Y8_GPIO_NUM       34
-#define Y7_GPIO_NUM       39
-#define Y6_GPIO_NUM       36
-#define Y5_GPIO_NUM       21
-#define Y4_GPIO_NUM       19
-#define Y3_GPIO_NUM       18
-#define Y2_GPIO_NUM        5
-#define VSYNC_GPIO_NUM    25
-#define HREF_GPIO_NUM     23
-#define PCLK_GPIO_NUM     22
-
-
+camera_fb_t *previous_frame = nullptr;
+unsigned long last_motion_time = 0; // Timestamp of the last detected motion
+const unsigned long motion_cooldown = 2000; // Cooldown period in milliseconds
 
 void initCamera() {
   camera_config_t config;
-  config.ledc_channel = LEDC_CHANNEL_0;
-  config.ledc_timer = LEDC_TIMER_0;
-  config.pin_d0 = Y2_GPIO_NUM;
   config.pin_d1 = Y3_GPIO_NUM;
   config.pin_d2 = Y4_GPIO_NUM;
   config.pin_d3 = Y5_GPIO_NUM;
@@ -55,80 +25,109 @@ void initCamera() {
   config.pin_pclk = PCLK_GPIO_NUM;
   config.pin_vsync = VSYNC_GPIO_NUM;
   config.pin_href = HREF_GPIO_NUM;
-  config.pin_sscb_sda = SIOD_GPIO_NUM;
-  config.pin_sscb_scl = SIOC_GPIO_NUM;
+  config.pin_sccb_sda = SIOD_GPIO_NUM;
+  config.pin_sccb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
-  config.pixel_format = PIXFORMAT_JPEG;
-
-
-  config.frame_size = FRAMESIZE_QVGA;   
-  config.jpeg_quality = 12;              
+  config.frame_size = FRAMESIZE_UXGA;
+  config.pixel_format = PIXFORMAT_JPEG;  // for streaming
+  config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+  config.fb_location = CAMERA_FB_IN_PSRAM;
+  config.jpeg_quality = 12;
   config.fb_count = 1;
 
-  // Initialize the camera
+  if (config.pixel_format == PIXFORMAT_JPEG) {
+    if (psramFound()) {
+      config.jpeg_quality = 10;
+      config.fb_count = 2;
+      config.grab_mode = CAMERA_GRAB_LATEST;
+    } else {
+      config.frame_size = FRAMESIZE_SVGA;
+      config.fb_location = CAMERA_FB_IN_DRAM;
+    }
+  } else {
+    config.frame_size = FRAMESIZE_240X240;
+#if CONFIG_IDF_TARGET_ESP32S3
+    config.fb_count = 2;
+#endif
+  }
+
+#if defined(CAMERA_MODEL_ESP_EYE)
+  pinMode(13, INPUT_PULLUP);
+  pinMode(14, INPUT_PULLUP);
+#endif
+
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
     Serial.printf("Camera init failed with error 0x%x", err);
     return;
   }
 
-  Serial.println("Camera initialized successfully!");
+  sensor_t *s = esp_camera_sensor_get();
+  if (s->id.PID == OV3660_PID) {
+    s->set_vflip(s, 1);
+    s->set_brightness(s, 1);
+    s->set_saturation(s, -2);
+  }
+  if (config.pixel_format == PIXFORMAT_JPEG) {
+    s->set_framesize(s, FRAMESIZE_QVGA);
+  }
+
+#if defined(CAMERA_MODEL_M5STACK_WIDE) || defined(CAMERA_MODEL_M5STACK_ESP32CAM)
+  s->set_vflip(s, 1);
+  s->set_hmirror(s, 1);
+#endif
+
+#if defined(CAMERA_MODEL_ESP32S3_EYE)
+  s->set_vflip(s, 1);
+#endif
+
+#if defined(LED_GPIO_NUM)
+  setupLedFlash(LED_GPIO_NUM);
+#endif
 }
 
-void takePicture() {
-  camera_fb_t* fb = esp_camera_fb_get();
-  
-  if (!fb) {
-    Serial.println("Camera capture failed");
+bool detectMotion(camera_fb_t *current_frame, camera_fb_t *previous_frame) {
+  if (!current_frame || !previous_frame) {
+    return false;
+  }
+
+  if (current_frame->len != previous_frame->len) {
+    return true;
+  }
+
+  int diff_count = 0;
+  for (size_t i = 0; i < current_frame->len; i++) {
+    if (current_frame->buf[i] != previous_frame->buf[i]) {
+      diff_count++;
+    }
+
+    if (diff_count > 2000) { // Increased threshold for motion detection
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void captureAndDetectMotion() {
+  camera_fb_t *current_frame = esp_camera_fb_get();
+  if (!current_frame) {
+    Serial.println("Failed to capture frame");
     return;
   }
 
-  Serial.print("Picture taken successfully! Size: ");
-  Serial.print(fb->len);
-  Serial.println(" bytes");
+  unsigned long current_time = millis();
+  bool motion_detected = detectMotion(current_frame, previous_frame);
 
-  esp_camera_fb_return(fb); 
-}
-
-void handleJPGStream(AsyncWebServerRequest *request) {
-  AsyncClient *client = request->client();
-  
-  if (!(client && client->connected())) return;
-
-  String response = 
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n\r\n";
-  client->write(response.c_str());
-
-  while (client->connected()) {
-    camera_fb_t *fb = esp_camera_fb_get();
-    if (!fb) {
-      Serial.println("Camera capture failed");
-      break;
-    }
-
-    client->write("--frame\r\n");
-    client->write("Content-Type: image/jpeg\r\n\r\n");
-    client->write(reinterpret_cast<const char*>(fb->buf), fb->len);
-    client->write("\r\n");
-
-    esp_camera_fb_return(fb);
-    delay(100);  // Adjust frame rate
+  if (motion_detected && (current_time - last_motion_time > motion_cooldown)) {
+    Serial.println("Motion detected!");
+    last_motion_time = current_time; // Update the last motion timestamp
   }
-}
 
-void startCameraWebServer() {
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(200, "text/html", 
-      "<html><body><h1>ESP32-CAM Stream</h1><img src=\"/stream\"></body></html>");
-  });
-
-  server.on("/stream", HTTP_GET, [](AsyncWebServerRequest *request){
-    handleJPGStream(request);
-  });
-
-  server.begin();
-  Serial.println("Async Camera Web Server started");
+  if (previous_frame) {
+    esp_camera_fb_return(previous_frame);
+  }
+  previous_frame = current_frame;
 }
