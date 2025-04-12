@@ -1,11 +1,10 @@
-// cam.cpp
 #include "cam.h"
-#include <Arduino.h>  // for Serial and delay
+#include <Arduino.h>
 
 #define CAM_WIDTH 160
 #define CAM_HEIGHT 120
-#define MOTION_THRESHOLD 25      // Sensitivity per pixel
-#define CHANGE_LIMIT 1000        // Number of changed pixels to trigger motion
+#define MOTION_THRESHOLD 25    
+#define CHANGE_LIMIT 1000       
 
 static uint8_t previousFrame[CAM_WIDTH * CAM_HEIGHT];
 static int lastMotionScore = 0;
@@ -62,7 +61,7 @@ bool detectMotion() {
         }
     }
 
-    // Save current frame for next comparison
+
     memcpy(previousFrame, fb->buf, fb->len);
     esp_camera_fb_return(fb);
 
