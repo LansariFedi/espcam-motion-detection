@@ -25,7 +25,7 @@ This project demonstrates a motion detection system using the AI Thinker ESP32-C
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/espcam-motion-detection.git
+git clone https://github.com/LansariFedi/espcam-motion-detection.git
 cd espcam-motion-detection
 ```
 
@@ -90,4 +90,4 @@ This project is licensed under the MIT License. See the `LICENSE` file for detai
 
 ---
 
-Feel free to contribute to this project by submitting issues or pull requests on [GitHub](https://github.com/yourusername/espcam-motion-detection).
+Feel free to contribute to this project by submitting issues or pull requests on [GitHub](https://github.com/LansariFedi/espcam-motion-detection).
